@@ -1,0 +1,270 @@
+---
+title: ''
+author: "KN"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+
+About
+=====
+- Questionnaire through Lancers, conducted in September, 2016.
+- 104 participants (after eliminating duplicate subjects and one subject who chose 5 only)
+- 5-point Likert scale
+- Target items: 
+    + e 16 
+    + dative 6
+    + good fillers 21, bad fillers 5
+48 in total
+
+Conditions:  
+e (a{mb/im} x b{ex/on})
+mobile object x extended causation  
+サッカー選手が左足をゴールポストにぶつけた。  
+immobile object x extended causation   
+サッカー選手がゴールポストを左足にぶつけた。  
+mobile object x onset causation
+サッカー選手がサッカーボールをゴールポストにぶつけた。  
+immobile object x onset causation  
+サッカー選手がゴールポストをサッカーボールにぶつけた。  
+
+
+##### Load libraries
+
+```{r}
+library(lme4)
+library(xtable)
+library(plyr)
+library(ggplot2)
+library(reshape)
+library(gdata)      
+library(MASS)
+```
+
+
+##### Declare the expt name that is relevant.
+```{r}
+ex<-"e"
+
+# plot labels
+#ab<-"NPI"
+#cd<-"nonNPI"
+#ac<-"Distant"
+#bd<-"Local"
+
+```
+
+
+##### Load data:
+
+```{r}
+alldata<-read.csv("newdata.csv")
+```
+
+
+
+
+
+
+
+Subj exclusion
+==============
+##### before trimming
+Subject number before trimming
+```{r}
+unique(alldata$subj)
+length(unique(alldata$subj))
+```
+
+
+##### trim
+
+```{r}
+data<-alldata
+data<-subset(data,subj!=c(9999))
+unique(data$subj)
+length(unique(data$subj))
+```
+
+
+
+##### standardized rating
+
+```{r}
+Zrate<-c()
+for(i in unique(data$subj)){   
+  # それぞれのsubj ratingを抜き出し
+  mySubjRating <- data[data$subj==i,];
+  # standardize
+  mySubjRating<-data.frame(mySubjRating,ZS=scale(mySubjRating$rating))
+  # それを蓄積
+  Zrate<-rbind(Zrate,mySubjRating)
+}
+
+data <- merge(data,Zrate,all=T);
+
+# sort when messed up
+data <- data[order(data$subj,data$expt,data$item),]
+rownames(data) <- c(1:nrow(data))
+```
+
+
+Isolate the data from the relevant experiment
+=============================================
+```{r}
+d<-subset(data,expt==ex)
+d<-subset(d,item%in%c(9:16))
+unique(d$expt)
+unique(d$item)
+```
+
+Summary
+====================
+
+##### Make sure factors are treated as factors
+```{r}
+d$subj<-factor(d$subj)
+d$expt<-factor(d$expt)
+d$item<-factor(d$item)
+d$a<-factor(d$a)
+d$b<-factor(d$b)
+```
+
+
+## Summary (interim)
+
+のちにtrimmingをする（かもしれない）ので，このファイルの最後でもういちどサマリーとプロットの最終盤を生成します。
+
+##### Extract data for summary
+
+
+
+##### summary
+```{r}
+ddply(d, .(a,b), summarise, N=length(subj), mean=mean(rating), sd=sd(rating), se=sd/sqrt(N))
+ddply(d, .(a,b), summarise, N=length(subj), mean=mean(ZS), sd=sd(ZS), se=sd/sqrt(N))
+```
+
+
+##### graph
+http://www.cookbook-r.com/Graphs/Bar_and_line_graphs_(ggplot2)/
+
+```{r}
+df<-ddply(d, .(a,b), summarise, N=length(subj), mean=mean(rating))
+df
+
+g <- ggplot(df,aes(x=a, y=mean, fill=b))
+g <- g + geom_bar(stat="identity", position=position_dodge(), color="black")
+g <- g +scale_fill_manual(values=c("gray", "gray"))
+print(g)
+
+# A bar graph
+g <- ggplot(df, aes(x=a, y=mean, fill=b)) 
+g <- g + geom_bar(colour="black", stat="identity",
+             position=position_dodge(),
+             size=.3)                        # Thinner lines
+g <- g +  scale_fill_hue(name="Causation type")      # Set legend title
+g <- g +  xlab("Object type") + ylab("Mean ratings") # Set axis labels
+g <- g +  ggtitle("Mean ratings")     # Set title
+g <- g +  theme_bw()
+g <- g +  theme(legend.position=c(.2, .7))           # Position legend inside
+g
+
+# A line graph
+g <- ggplot(df, aes(x=a, y=mean, group=b, shape=b, colour=b)) 
+g <- g + geom_line(aes(linetype=b), size=1)     # Set linetype
+g <- g  + geom_point(size=3, fill="white")         # Use larger points, fill with white
+g <- g  + expand_limits(y=1)                       # Set y range to include 0
+g <- g  + scale_colour_hue(name="Object type",      # Set legend title
+                     l=30)                  # Use darker colors (lightness=30)
+g <- g + scale_shape_manual(name="Object type",
+                       values=c(22,21))      # Use points with a fill color
+g <- g + scale_linetype_discrete(name="Object type")
+g <- g + xlab("Causation type") + ylab("Mean ratings") # Set axis labels
+g <- g + ggtitle("Mean ratings")     # Set title
+g <- g + theme_bw()
+g <- g +  theme(legend.position=c(.8, .4))           # Position legend inside
+                                               # This must go after theme_bw
+g
+
+
+```
+
+
+Analyses
+========
+
+
+### Analysis 
+
+
+
+Coding factors (with centering)
+-------------------------------
+
+##### CONDITIONS:
+
+```{r}
+d$int<-ifelse(d$a=="mb"&d$b=="ex",1,ifelse(d$a=="im"&d$b=="on",1,-1))
+
+g <- ggplot(d, aes(x=int, y=rating))
+g <- g + geom_jitter(width=1)
+g <- g + geom_point(shape=1, fill="gray")    # Use hollow circles
+#g <- g + geom_boxplot()
+g <- g + geom_smooth(method=lm,   # Add linear regression line
+                se=FALSE)    # Don't add shaded confidence region
+g
+
+
+d$obj<-ifelse(d$a=="mb",1,-1)
+d$caus<-ifelse(d$b=="ex",1,-1)
+
+g <- ggplot(d, aes(x=obj, y=rating))
+g <- g + geom_jitter(width=1)
+g <- g + geom_point(shape=1, fill="gray")    # Use hollow circles
+#g <- g + geom_boxplot()
+g <- g + geom_smooth(method=lm,   # Add linear regression line
+                se=FALSE)    # Don't add shaded confidence region
+g
+
+g <- ggplot(d, aes(x=caus, y=rating))
+g <- g + geom_jitter(width=1)
+g <- g + geom_point(shape=1, fill="gray")    # Use hollow circles
+#g <- g + geom_boxplot()
+g <- g + geom_smooth(method=lm,   # Add linear regression line
+                se=FALSE)    # Don't add shaded confidence region
+g
+```
+
+
+
+##### Max model
+```{r}
+mm<-lmer(rating~a*b+
+           (a*b+1|subj)+(a*b+1|item),
+           control=lmerControl(optimizer="bobyqa"),
+           d)
+summary(mm)
+
+mm<-lmer(rating~obj*caus+
+           (obj*caus+1|subj)+(obj*caus+1|item),
+           control=lmerControl(optimizer="bobyqa"),
+           d)
+summary(mm)
+
+mm<-lmer(ZS~a*b+
+           (a*b+1|subj)+(a*b+1|item),
+           control=lmerControl(optimizer="bobyqa"),
+           d)
+summary(mm)
+
+mm<-lmer(ZS~obj*caus+
+           (obj*caus+1|subj)+(obj*caus+1|item),
+           control=lmerControl(optimizer="bobyqa"),
+           d)
+summary(mm)
+
+```
+
+
+
